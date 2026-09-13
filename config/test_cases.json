@@ -1,0 +1,37 @@
+[
+  {
+    "id": "TC01",
+    "type": "direct_query",
+    "question": "Chào bạn, bạn có thể giới thiệu quy trình giao nhận hàng nội bộ của kho vận VinFast không?",
+    "expected_behavior": "Chatbot trả lời trực tiếp từ System Prompt về quy trình kho vận chung, không cần gọi bất kỳ Tool nào.",
+    "complexity": "Low"
+  },
+  {
+    "id": "TC02",
+    "type": "single_tool_query",
+    "question": "Hãy tra cứu thông tin vận đơn DH2026001: vị trí lưu kho và trạng thái hiện tại.",
+    "expected_behavior": "Agent nhận diện nhu cầu tra cứu đơn hàng, tự động phát sinh Tool Call 'academic_query' với mã DH2026001.",
+    "complexity": "Medium"
+  },
+  {
+    "id": "TC03",
+    "type": "appointment_booking",
+    "question": "Cập nhật trạng thái vận đơn DH2026001 thành 'Đã giao' tại kho Hà Nội vào 14:00 ngày 15/09/2026, phụ trách bởi điều phối Nguyễn Văn A.",
+    "expected_behavior": "Agent tự động phát sinh Tool Call 'schedule_appointment' với đúng mã vận đơn, thời điểm cập nhật và người phụ trách.",
+    "complexity": "Medium"
+  },
+  {
+    "id": "TC04",
+    "type": "multi_step_reasoning",
+    "question": "Kiểm tra vận đơn DH2026001 đang ở kho nào và trạng thái gì, nếu đơn vẫn đang vận chuyển thì cập nhật thành 'Đã giao' lúc 14:00 ngày 15/09/2026 với điều phối đúng người đang phụ trách đơn đó.",
+    "expected_behavior": "Agent thực hiện chuỗi suy luận ReAct: Tra cứu vận đơn trước để lấy vị trí kho, trạng thái và điều phối, sau đó mới gọi tool cập nhật trạng thái.",
+    "complexity": "High"
+  },
+  {
+    "id": "TC05",
+    "type": "edge_case_handling",
+    "question": "Hãy tra cứu vận đơn DH9999999 giúp tôi.",
+    "expected_behavior": "Agent nhận kết quả NOT_FOUND từ Tool và đưa ra phản hồi lịch sự, chính xác, không bịa đặt vị trí kho hay trạng thái đơn hàng.",
+    "complexity": "Medium"
+  }
+]

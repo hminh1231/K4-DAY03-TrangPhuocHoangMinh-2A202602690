@@ -6,6 +6,7 @@ Hỗ trợ Native Tool Calling và chuyển đổi linh hoạt qua biến môi t
 import os
 import sys
 import json
+import re
 from typing import Dict, Any, List
 from dotenv import load_dotenv
 
@@ -15,7 +16,11 @@ if sys.stdout.encoding != 'utf-8':
     except Exception:
         pass
 
-load_dotenv()
+def _clean_api_key(raw: str | None) -> str:
+    """Bỏ khoảng trắng và dấu ngoặc kép quanh API key trong file .env."""
+    if not raw:
+        return ""
+    return raw.strip().strip('"').strip("'").strip()
 
 class BaseLLMProvider:
     """Interface cơ sở cho các LLM Provider hỗ trợ Native Tool Calling"""
@@ -24,6 +29,28 @@ class BaseLLMProvider:
 
     def generate_with_tools(self, prompt: str, tools_schema: List[Dict[str, Any]], system_prompt: str = "") -> Dict[str, Any]:
         raise NotImplementedError
+
+
+TRACKING_CODE_RE = re.compile(r"\b([A-Za-z]{2,}\d{4,})\b")
+
+
+def extract_tracking_code(prompt: str) -> str:
+    """Lấy mã vận đơn từ câu hỏi gốc, không lấy mã trong Observation (tránh trả nhầm SV2026001)."""
+    original = re.split(r"\n\[(?:Action|Observation)\]:", prompt, maxsplit=1)[0]
+    match = TRACKING_CODE_RE.search(original)
+    if match:
+        return match.group(1).upper()
+    match = TRACKING_CODE_RE.search(prompt)
+    return match.group(1).upper() if match else ""
+
+
+def extract_new_items(prompt: str) -> str:
+    """Lấy tên hàng hóa mới từ cụm 'thành ...' trong câu hỏi gốc."""
+    original = re.split(r"\n\[(?:Action|Observation)\]:", prompt, maxsplit=1)[0].strip()
+    match = re.search(r"thành\s+(.+)$", original, re.IGNORECASE | re.DOTALL)
+    if match:
+        return re.sub(r"\s+", " ", match.group(1)).strip(" .")
+    return ""
 
 
 class MockOfflineProvider(BaseLLMProvider):
@@ -36,35 +63,158 @@ class MockOfflineProvider(BaseLLMProvider):
 
     def generate_with_tools(self, prompt: str, tools_schema: List[Dict[str, Any]], system_prompt: str = "") -> Dict[str, Any]:
         prompt_lower = prompt.lower()
-        
-        # Mô phỏng nhận diện intent gọi Tool
-        if "sv2026001" in prompt_lower and "đặt lịch" in prompt_lower:
+        entity_id = extract_tracking_code(prompt)
+        observation_count = prompt_lower.count("[observation]")
+
+        # Đã có Observation: gọi tool tiếp theo (nếu là bài toán đa bước) hoặc trả lời cuối cùng
+        if observation_count >= 1:
+            needs_status = any(keyword in prompt_lower for keyword in ["đặt lịch", "cập nhật trạng thái", "đã giao"])
+            needs_item_update = any(
+                keyword in prompt_lower
+                for keyword in ["hàng hóa", "điều chỉnh hàng", "thay đổi hàng", "đổi hàng", "sửa hàng"]
+            )
+            already_status = "booking_id" in prompt_lower or "schedule_appointment" in prompt_lower
+            already_item = "update_shipment" in prompt_lower or "updated_fields" in prompt_lower
+            not_found = "not_found" in prompt_lower
+            if needs_item_update and not already_item and not not_found and observation_count == 1 and entity_id:
+                items = extract_new_items(prompt)
+                args = {"student_id": entity_id}
+                if items:
+                    args["items"] = items
+                return {
+                    "type": "tool_call",
+                    "tool_name": "update_shipment",
+                    "arguments": args,
+                    "thought": "Đã tra cứu vận đơn. Tiếp tục gọi update_shipment để đổi hàng hóa."
+                }
+            if needs_status and not already_status and not not_found and observation_count == 1 and entity_id:
+                return {
+                    "type": "tool_call",
+                    "tool_name": "schedule_appointment",
+                    "arguments": {
+                        "student_id": entity_id,
+                        "datetime_str": "14:00 15/09/2026",
+                        "advisor_name": "Nguyễn Văn A",
+                        "new_status": "Đã giao"
+                    },
+                    "thought": "Đã nhận Observation tra cứu. Tiếp tục gọi tool cập nhật trạng thái."
+                }
+            return {
+                "type": "text",
+                "content": self._final_answer_from_observation(prompt),
+                "thought": "Đã đủ Observation, tổng hợp câu trả lời cuối cùng, không bịa dữ liệu."
+            }
+
+        needs_item_update = any(
+            keyword in prompt_lower
+            for keyword in ["hàng hóa", "điều chỉnh hàng", "thay đổi hàng", "đổi hàng", "sửa hàng"]
+        )
+        if needs_item_update:
+            if not entity_id:
+                return {
+                    "type": "text",
+                    "content": "Bạn vui lòng cung cấp mã vận đơn cần điều chỉnh hàng hóa (ví dụ DH2026001).",
+                    "thought": "Thiếu mã vận đơn nên không gọi update_shipment."
+                }
+            items = extract_new_items(prompt)
+            args = {"student_id": entity_id}
+            if items:
+                args["items"] = items
+            return {
+                "type": "tool_call",
+                "tool_name": "update_shipment",
+                "arguments": args,
+                "thought": f"Người dùng muốn điều chỉnh thông tin vận đơn {entity_id}. Gọi update_shipment."
+            }
+
+        if any(keyword in prompt_lower for keyword in ["đặt lịch", "cập nhật trạng thái", "cập nhật vận đơn"]):
+            if not entity_id:
+                return {
+                    "type": "text",
+                    "content": "Bạn vui lòng cung cấp mã vận đơn cần cập nhật (ví dụ DH2026001).",
+                    "thought": "Thiếu mã vận đơn nên không gọi tool hành động."
+                }
+            if any(keyword in prompt_lower for keyword in ["kiểm tra", "nếu", "trước"]):
+                return {
+                    "type": "tool_call",
+                    "tool_name": "academic_query",
+                    "arguments": {"student_id": entity_id},
+                    "thought": "Bài toán đa bước: tra cứu dữ liệu trước, rồi mới cập nhật."
+                }
             return {
                 "type": "tool_call",
                 "tool_name": "schedule_appointment",
-                "arguments": {"student_id": "SV2026001", "datetime_str": "14:00 15/09/2026", "advisor_name": "PGS.TS Nguyễn Văn A"},
-                "thought": "Người dùng yêu cầu đặt lịch hẹn tư vấn cho sinh viên SV2026001. Tôi sẽ gọi tool schedule_appointment."
+                "arguments": {
+                    "student_id": entity_id,
+                    "datetime_str": "14:00 15/09/2026",
+                    "advisor_name": "Nguyễn Văn A",
+                    "new_status": "Đã giao"
+                },
+                "thought": f"Người dùng yêu cầu hành động cập nhật/đặt lịch cho mã {entity_id}."
             }
-        elif "sv2026001" in prompt_lower or "tra cứu" in prompt_lower:
+        elif any(keyword in prompt_lower for keyword in ["tra cứu", "kiểm tra"]) or entity_id:
+            if not entity_id:
+                return {
+                    "type": "text",
+                    "content": "Bạn vui lòng cung cấp mã vận đơn (ví dụ DH2026001) để hệ thống tra cứu. Em không bịa dữ liệu khi thiếu mã.",
+                    "thought": "Người dùng muốn tra cứu nhưng chưa nêu mã vận đơn."
+                }
             return {
                 "type": "tool_call",
                 "tool_name": "academic_query",
-                "arguments": {"student_id": "SV2026001"},
-                "thought": "Người dùng muốn tra cứu thông tin học vụ của sinh viên SV2026001. Tôi sẽ gọi tool academic_query."
+                "arguments": {"student_id": entity_id},
+                "thought": f"Người dùng muốn tra cứu thông tin của mã {entity_id}. Tôi sẽ gọi tool academic_query."
             }
         else:
             return {
                 "type": "text",
-                "content": f"[Mock Agent Response]: Xin chào! Quy chế học vụ VinUni yêu cầu sinh viên tích lũy tối thiểu 120 tín chỉ và duy trì GPA trên 2.0 để tốt nghiệp.",
-                "thought": "Câu hỏi chung về quy chế học vụ, trả lời trực tiếp không cần gọi Tool."
+                "content": "[Mock Agent Response]: Xin chào! Quy trình kho vận nội bộ gồm nhập kho, lưu kho, vận chuyển và bàn giao. Đơn hàng được cập nhật trạng thái theo thời gian thực.",
+                "thought": "Câu hỏi chung, trả lời trực tiếp không cần gọi Tool."
             }
+
+    def _final_answer_from_observation(self, prompt: str) -> str:
+        marker = "[Observation]:"
+        if marker not in prompt:
+            return "Đã nhận kết quả từ công cụ."
+        chunk = prompt[prompt.rfind(marker) + len(marker):].strip().split("\n")[0]
+        try:
+            obs = json.loads(chunk)
+        except json.JSONDecodeError:
+            return "Đã nhận Observation từ công cụ."
+        if obs.get("status") == "NOT_FOUND":
+            return obs.get("message", "Không tìm thấy dữ liệu yêu cầu.")
+        if obs.get("status") == "SUCCESS" and "data" in obs:
+            data = obs["data"]
+            return (
+                f"Kết quả tra cứu vận đơn {obs.get('tracking_code', obs.get('student_id', ''))}: "
+                f"khách {data.get('customer_name', data.get('full_name', ''))}, "
+                f"kho {data.get('warehouse', '')}, trạng thái {data.get('status', '')}, "
+                f"điều phối {data.get('coordinator', data.get('advisor', ''))}."
+            )
+        if obs.get("message"):
+            return obs["message"]
+        return json.dumps(obs, ensure_ascii=False)
 
 
 class GeminiProvider(BaseLLMProvider):
     """Google Gemini Provider (Native Tool Calling với Google GenAI SDK)"""
+    _live_disabled = False
+
     def __init__(self, api_key: str = None, model: str = None):
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+        self.api_key = _clean_api_key(api_key or os.getenv("GEMINI_API_KEY"))
         self.model_name = model or os.getenv("LLM_MODEL") or "gemini-2.5-flash"
+
+    def _should_use_mock(self) -> bool:
+        if GeminiProvider._live_disabled:
+            return True
+        if not self.api_key or self.api_key == "your_gemini_api_key_here":
+            return True
+        return False
+
+    def _mark_invalid_key(self, error: Exception) -> None:
+        text = str(error)
+        if any(token in text for token in ["API_KEY_INVALID", "API key not valid"]):
+            GeminiProvider._live_disabled = True
 
     def generate(self, prompt: str, system_prompt: str = "") -> str:
         if not self.api_key or self.api_key == "your_gemini_api_key_here":
@@ -79,8 +229,11 @@ class GeminiProvider(BaseLLMProvider):
             return f"[Gemini Exception]: {str(e)}"
 
     def generate_with_tools(self, prompt: str, tools_schema: List[Dict[str, Any]], system_prompt: str = "") -> Dict[str, Any]:
+        if GeminiProvider._live_disabled:
+            print("ℹ️ [Gemini Provider]: Key đã bị Gemini từ chối ở bước trước. Tiếp tục Mock, không gọi lại API.")
+            return MockOfflineProvider().generate_with_tools(prompt, tools_schema, system_prompt)
         if not self.api_key or self.api_key == "your_gemini_api_key_here":
-            print("ℹ️ [Gemini Provider]: Chưa tìm thấy GEMINI_API_KEY hợp lệ. Tự động chuyển sang Mock Offline.")
+            print("ℹ️ [Gemini Provider]: Chưa thấy GEMINI_API_KEY trong .env. Đang dùng Mock Offline.")
             return MockOfflineProvider().generate_with_tools(prompt, tools_schema, system_prompt)
         
         try:
@@ -131,6 +284,7 @@ class GeminiProvider(BaseLLMProvider):
                 }
 
         except Exception as e:
+            self._mark_invalid_key(e)
             print(f"⚠️ [Gemini API Warning]: Không thể kết nối live API ({str(e)}). Tự động fallback về Mock.")
             return MockOfflineProvider().generate_with_tools(prompt, tools_schema, system_prompt)
 
@@ -138,7 +292,7 @@ class GeminiProvider(BaseLLMProvider):
 class OpenAIProvider(BaseLLMProvider):
     """OpenAI Provider (Native Tool Calling với OpenAI SDK)"""
     def __init__(self, api_key: str = None, model: str = None):
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.api_key = _clean_api_key(api_key or os.getenv("OPENAI_API_KEY"))
         self.model_name = model or os.getenv("LLM_MODEL") or "gpt-4o-mini"
 
     def generate(self, prompt: str, system_prompt: str = "") -> str:
@@ -216,13 +370,13 @@ def get_llm_provider() -> BaseLLMProvider:
     provider_type = os.getenv("LLM_PROVIDER", "gemini").lower()
     
     if provider_type == "gemini":
-        key = os.getenv("GEMINI_API_KEY")
+        key = _clean_api_key(os.getenv("GEMINI_API_KEY"))
         if key and key != "your_gemini_api_key_here":
             return GeminiProvider()
         else:
             return MockOfflineProvider()
     elif provider_type == "openai":
-        key = os.getenv("OPENAI_API_KEY")
+        key = _clean_api_key(os.getenv("OPENAI_API_KEY"))
         if key and key != "your_openai_api_key_here":
             return OpenAIProvider()
         else:

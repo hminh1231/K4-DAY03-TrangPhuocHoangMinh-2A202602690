@@ -1,29 +1,154 @@
 [
   {
     "step": 1,
-    "query": "Chào bạn, bạn có thể giới thiệu quy chế học vụ cơ bản của Đại học VinUni không?",
+    "query": "Chào bạn, bạn có thể giới thiệu quy trình giao nhận hàng nội bộ của kho vận VinFast không?",
     "action_type": "FINAL_ANSWER",
-    "thought": "Câu hỏi chung về quy chế học vụ, trả lời trực tiếp không cần gọi Tool.",
-    "output": "[Mock Agent Response]: Xin chào! Quy chế học vụ VinUni yêu cầu sinh viên tích lũy tối thiểu 120 tín chỉ và duy trì GPA trên 2.0 để tốt nghiệp.",
-    "latency_ms": 2845.93
+    "thought": "Câu hỏi chung, trả lời trực tiếp không cần gọi Tool.",
+    "output": "[Mock Agent Response]: Xin chào! Quy trình kho vận nội bộ gồm nhập kho, lưu kho, vận chuyển và bàn giao. Đơn hàng được cập nhật trạng thái theo thời gian thực.",
+    "latency_ms": 3.41
   },
   {
     "step": 1,
-    "query": "Hãy tra cứu thông tin học vụ của sinh viên SV2026001.",
+    "query": "Hãy tra cứu thông tin vận đơn DH2026001: vị trí lưu kho và trạng thái hiện tại.",
     "action_type": "TOOL_EXECUTION",
     "tool_name": "academic_query",
     "arguments": {
-      "student_id": "SV2026001"
+      "student_id": "DH2026001"
     },
-    "observation": {},
-    "latency_ms": 799.12
+    "observation": {
+      "status": "SUCCESS",
+      "student_id": "DH2026001",
+      "tracking_code": "DH2026001",
+      "data": {
+        "tracking_code": "DH2026001",
+        "customer_name": "Nguyễn Văn An",
+        "full_name": "Nguyễn Văn An",
+        "warehouse": "Kho Hà Nội",
+        "status": "Đang vận chuyển",
+        "coordinator": "Nguyễn Văn A",
+        "advisor": "Nguyễn Văn A",
+        "items": "Phụ tùng pin VF8"
+      }
+    },
+    "latency_ms": 1.01
   },
   {
     "step": 2,
-    "query": "Hãy tra cứu thông tin học vụ của sinh viên SV2026001.",
+    "query": "Hãy tra cứu thông tin vận đơn DH2026001: vị trí lưu kho và trạng thái hiện tại.",
     "action_type": "FINAL_ANSWER",
-    "thought": "Tổng hợp kết quả từ MCP Server thành công.",
-    "output": "Chưa thể trả lời chi tiết do chưa nhận được dữ liệu từ MCP Server (hãy hoàn thành TODO 2.1).",
-    "latency_ms": 10.0
+    "thought": "Đã đủ Observation, tổng hợp câu trả lời cuối cùng, không bịa dữ liệu.",
+    "output": "Kết quả tra cứu vận đơn DH2026001: khách Nguyễn Văn An, kho Kho Hà Nội, trạng thái Đang vận chuyển, điều phối Nguyễn Văn A.",
+    "latency_ms": 0.0
+  },
+  {
+    "step": 1,
+    "query": "Cập nhật trạng thái vận đơn DH2026001 thành 'Đã giao' tại kho Hà Nội vào 14:00 ngày 15/09/2026, phụ trách bởi điều phối Nguyễn Văn A.",
+    "action_type": "TOOL_EXECUTION",
+    "tool_name": "schedule_appointment",
+    "arguments": {
+      "student_id": "DH2026001",
+      "datetime_str": "14:00 15/09/2026",
+      "advisor_name": "Nguyễn Văn A",
+      "new_status": "Đã giao"
+    },
+    "observation": {
+      "status": "SUCCESS",
+      "booking_id": "UPD-DH2026001-99",
+      "student_id": "DH2026001",
+      "tracking_code": "DH2026001",
+      "datetime": "14:00 15/09/2026",
+      "advisor": "Nguyễn Văn A",
+      "new_status": "Đã giao",
+      "warehouse": "Kho Hà Nội",
+      "message": "Đã cập nhật vận đơn DH2026001 thành 'Đã giao' tại Kho Hà Nội lúc 14:00 15/09/2026, điều phối Nguyễn Văn A."
+    },
+    "latency_ms": 0.0
+  },
+  {
+    "step": 2,
+    "query": "Cập nhật trạng thái vận đơn DH2026001 thành 'Đã giao' tại kho Hà Nội vào 14:00 ngày 15/09/2026, phụ trách bởi điều phối Nguyễn Văn A.",
+    "action_type": "FINAL_ANSWER",
+    "thought": "Đã đủ Observation, tổng hợp câu trả lời cuối cùng, không bịa dữ liệu.",
+    "output": "Đã cập nhật vận đơn DH2026001 thành 'Đã giao' tại Kho Hà Nội lúc 14:00 15/09/2026, điều phối Nguyễn Văn A.",
+    "latency_ms": 0.0
+  },
+  {
+    "step": 1,
+    "query": "Kiểm tra vận đơn DH2026001 đang ở kho nào và trạng thái gì, nếu đơn vẫn đang vận chuyển thì cập nhật thành 'Đã giao' lúc 14:00 ngày 15/09/2026 với điều phối đúng người đang phụ trách đơn đó.",
+    "action_type": "TOOL_EXECUTION",
+    "tool_name": "academic_query",
+    "arguments": {
+      "student_id": "DH2026001"
+    },
+    "observation": {
+      "status": "SUCCESS",
+      "student_id": "DH2026001",
+      "tracking_code": "DH2026001",
+      "data": {
+        "tracking_code": "DH2026001",
+        "customer_name": "Nguyễn Văn An",
+        "full_name": "Nguyễn Văn An",
+        "warehouse": "Kho Hà Nội",
+        "status": "Đang vận chuyển",
+        "coordinator": "Nguyễn Văn A",
+        "advisor": "Nguyễn Văn A",
+        "items": "Phụ tùng pin VF8"
+      }
+    },
+    "latency_ms": 0.0
+  },
+  {
+    "step": 2,
+    "query": "Kiểm tra vận đơn DH2026001 đang ở kho nào và trạng thái gì, nếu đơn vẫn đang vận chuyển thì cập nhật thành 'Đã giao' lúc 14:00 ngày 15/09/2026 với điều phối đúng người đang phụ trách đơn đó.",
+    "action_type": "TOOL_EXECUTION",
+    "tool_name": "schedule_appointment",
+    "arguments": {
+      "student_id": "DH2026001",
+      "datetime_str": "14:00 15/09/2026",
+      "advisor_name": "Nguyễn Văn A",
+      "new_status": "Đã giao"
+    },
+    "observation": {
+      "status": "SUCCESS",
+      "booking_id": "UPD-DH2026001-99",
+      "student_id": "DH2026001",
+      "tracking_code": "DH2026001",
+      "datetime": "14:00 15/09/2026",
+      "advisor": "Nguyễn Văn A",
+      "new_status": "Đã giao",
+      "warehouse": "Kho Hà Nội",
+      "message": "Đã cập nhật vận đơn DH2026001 thành 'Đã giao' tại Kho Hà Nội lúc 14:00 15/09/2026, điều phối Nguyễn Văn A."
+    },
+    "latency_ms": 0.0
+  },
+  {
+    "step": 3,
+    "query": "Kiểm tra vận đơn DH2026001 đang ở kho nào và trạng thái gì, nếu đơn vẫn đang vận chuyển thì cập nhật thành 'Đã giao' lúc 14:00 ngày 15/09/2026 với điều phối đúng người đang phụ trách đơn đó.",
+    "action_type": "FINAL_ANSWER",
+    "thought": "Đã đủ Observation, tổng hợp câu trả lời cuối cùng, không bịa dữ liệu.",
+    "output": "Đã cập nhật vận đơn DH2026001 thành 'Đã giao' tại Kho Hà Nội lúc 14:00 15/09/2026, điều phối Nguyễn Văn A.",
+    "latency_ms": 0.0
+  },
+  {
+    "step": 1,
+    "query": "Hãy tra cứu vận đơn DH9999999 giúp tôi.",
+    "action_type": "TOOL_EXECUTION",
+    "tool_name": "academic_query",
+    "arguments": {
+      "student_id": "DH9999999"
+    },
+    "observation": {
+      "status": "NOT_FOUND",
+      "message": "Không tìm thấy vận đơn có mã 'DH9999999'. Không bịa vị trí kho hoặc trạng thái."
+    },
+    "latency_ms": 1.0
+  },
+  {
+    "step": 2,
+    "query": "Hãy tra cứu vận đơn DH9999999 giúp tôi.",
+    "action_type": "FINAL_ANSWER",
+    "thought": "Đã đủ Observation, tổng hợp câu trả lời cuối cùng, không bịa dữ liệu.",
+    "output": "Không tìm thấy vận đơn có mã 'DH9999999'. Không bịa vị trí kho hoặc trạng thái.",
+    "latency_ms": 0.0
   }
 ]
